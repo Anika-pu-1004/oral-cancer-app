@@ -35,8 +35,11 @@ SECTION_TITLES = {
 LEVEL_BN = {"URGENT": "জরুরি", "HIGH": "উচ্চ ঝুঁকি", "MODERATE": "মাঝারি ঝুঁকি", "LOW": "কম ঝুঁকি"}
 LEVEL_TIME = {"URGENT": "২ সপ্তাহের মধ্যে বিশেষজ্ঞ", "HIGH": "৪ সপ্তাহের মধ্যে ডাক্তার",
               "MODERATE": "৩ মাসের মধ্যে পরীক্ষা", "LOW": "নিয়মিত পরীক্ষা"}
-LEVEL_COLOUR = {"URGENT": "#c62828", "HIGH": "#ef6c00", "MODERATE": "#f9a825", "LOW": "#2e7d32"}
-LEVEL_TINT = {"URGENT": "#c62828", "HIGH": "#fff3e0", "MODERATE": "#fffde7", "LOW": "#e8f5e9"}
+# Scheme 1 (red - yellow - blue - green): four hues far apart on the colour wheel, so no two
+# levels look alike, even for colour-blind users. Each level also has its own symbol.
+LEVEL_COLOUR = {"URGENT": "#A32D2D", "HIGH": "#FAC775", "MODERATE": "#B5D4F4", "LOW": "#C0DD97"}
+LEVEL_TEXT = {"URGENT": "#FCEBEB", "HIGH": "#412402", "MODERATE": "#042C53", "LOW": "#173404"}
+LEVEL_EDGE = {"URGENT": "#791F1F", "HIGH": "#BA7517", "MODERATE": "#378ADD", "LOW": "#639922"}
 LEVEL_STEP = {"URGENT": "৪", "HIGH": "৩", "MODERATE": "২", "LOW": "১"}
 IMAGE_RAISES_TO = "HIGH"          # a suspicious photo raises the level to at least HIGH
 
@@ -62,13 +65,13 @@ def ladder_html(level: str) -> str:
     for lvl in ["URGENT", "HIGH", "MODERATE", "LOW"]:
         here = lvl == level
         bg = LEVEL_COLOUR[lvl] if here else "rgba(128,128,128,0.08)"
-        fg = "white" if here else "inherit"
+        fg = LEVEL_TEXT[lvl] if here else "inherit"
         weight = 700 if here else 400
         marker = "◀ এই রোগী" if here else ""
         rows.append(
             f'<div style="display:flex; justify-content:space-between; align-items:center;'
             f' background:{bg}; color:{fg}; font-weight:{weight}; padding:8px 14px;'
-            f' margin:4px 0; border-radius:6px; border-left:8px solid {LEVEL_COLOUR[lvl]};">'
+            f' margin:4px 0; border-radius:6px; border-left:8px solid {LEVEL_EDGE[lvl]};">'
             f'<span>ধাপ {LEVEL_STEP[lvl]}: {ADVICE_BN[lvl][0]} {LEVEL_BN[lvl]} '
             f'<small>({LEVEL_TIME[lvl]})</small></span><span>{marker}</span></div>')
     return ('<div style="font-size:0.95rem;"><div style="opacity:0.7;">▲ সবচেয়ে গুরুতর</div>'
@@ -77,14 +80,9 @@ def ladder_html(level: str) -> str:
 
 def result_box_html(level: str) -> str:
     emoji, advice = ADVICE_BN[level]
-    if level == "URGENT":   # solid red with white text: impossible to miss
-        return (f'<div style="background:{LEVEL_COLOUR[level]}; color:white; padding:20px 22px;'
-                f' border-radius:10px;"><div style="font-size:1.9rem; font-weight:800;">'
-                f'⚠️ {LEVEL_BN[level]}: {LEVEL_TIME[level]}</div>'
-                f'<div style="font-size:1.1rem; margin-top:8px;">{advice}</div></div>')
-    return (f'<div style="background:{LEVEL_TINT[level]}; border-left:10px solid {LEVEL_COLOUR[level]};'
-            f' padding:18px 22px; border-radius:10px; color:#1a1a1a;">'
-            f'<div style="font-size:1.7rem; font-weight:800; color:{LEVEL_COLOUR[level]};">'
+    return (f'<div style="background:{LEVEL_COLOUR[level]}; color:{LEVEL_TEXT[level]};'
+            f' border:2px solid {LEVEL_EDGE[level]}; padding:20px 22px; border-radius:10px;">'
+            f'<div style="font-size:1.9rem; font-weight:800;">'
             f'{emoji} {LEVEL_BN[level]}: {LEVEL_TIME[level]}</div>'
             f'<div style="font-size:1.1rem; margin-top:8px;">{advice}</div></div>')
 
@@ -93,6 +91,9 @@ def result_box_html(level: str) -> str:
 st.title("🦷 মুখের ক্যান্সার ঝুঁকি নির্ণয়")
 st.caption("স্বাস্থ্যকর্মীদের জন্য: রোগীকে কত দ্রুত বিশেষজ্ঞ দেখাতে হবে, তা নির্ধারণে সহায়তা")
 st.info(DISCLAIMER_BN)
+st.info("👩‍⚕️ এই অ্যাপ ব্যবহার করবেন প্রশিক্ষিত স্বাস্থ্যকর্মী। রোগীর মুখের ভেতর টর্চ দিয়ে দেখে "
+        "এবং দরকার হলে আঙুল দিয়ে হালকা চাপ দিয়ে প্রশ্নের উত্তর দিন, আর ছবিও আপনিই তুলুন। "
+        "রোগী নিজে আন্দাজে উত্তর দিলে ভুল ফলাফল আসতে পারে।")
 st.warning("⚠️ এটি একটি গবেষণার নমুনা (research prototype), বাস্তব চিকিৎসায় ব্যবহারের জন্য নয়। আসল রোগীর ছবি আপলোড করবেন না।")
 
 with st.sidebar:

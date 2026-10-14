@@ -21,64 +21,115 @@ class Finding:
 
 
 def check_red_flags(p: Patient) -> list:
+    """Symptom rules. Duration thresholds follow the clinical 'RULE' (a single lesion
+    persisting 3 weeks or more is suspicious) so that short-lived, harmless findings
+    reported by lay observers do not trigger an urgent referral."""
     f = []
 
-    # ---------- URGENT: specialist within 2 weeks ----------
-    if p.ulcer and p.ulcer_days > 21:
-        f.append(Finding("URGENT", "Non-healing ulcer for more than 3 weeks (NICE NG12)",
-                         "৩ সপ্তাহের বেশি সময় ধরে না-শুকানো ঘা"))
+    def add(level, en, bn):
+        f.append(Finding(level, en, bn))
+
+    # ---------- ulcer ----------
+    if p.ulcer:
+        if p.ulcer_days > 21:
+            add("URGENT", "Non-healing ulcer for more than 3 weeks (NICE NG12)",
+                "৩ সপ্তাহের বেশি সময় ধরে না-শুকানো ঘা")
+        elif p.ulcer_days >= 14:
+            add("HIGH", "Ulcer for 2-3 weeks (OCF 2-4 week rule)", "২–৩ সপ্তাহ ধরে ঘা")
+        else:
+            add("MODERATE", "Recent ulcer (see a dentist if not healed within 2 weeks)",
+                "নতুন ঘা (২ সপ্তাহে না শুকালে ডাক্তার দেখান)")
+
+    # ---------- distinct red or red-and-white patch ----------
     if p.red_patch:
-        f.append(Finding("URGENT", "Red or red-and-white patch (NICE NG12)",
-                         "মুখে লাল বা লাল-সাদা মেশানো দাগ"))
+        if p.red_patch_days > 21:
+            add("URGENT", "Distinct red or red-and-white patch for more than 3 weeks (NICE NG12, RULE)",
+                "৩ সপ্তাহের বেশি সময় ধরে লাল বা লাল-সাদা দাগ")
+        elif p.red_patch_days >= 14:
+            add("HIGH", "Distinct red or red-and-white patch for 2-3 weeks",
+                "২–৩ সপ্তাহ ধরে লাল বা লাল-সাদা দাগ")
+        else:
+            add("MODERATE", "Recent red patch (re-check if not gone within 2 weeks)",
+                "নতুন লাল দাগ (২ সপ্তাহে না সারলে ডাক্তার দেখান)")
+
+    # ---------- white patch ----------
+    if p.white_patch:
+        if p.white_patch_days >= 14:
+            add("HIGH", "White patch for 2 weeks or more (possible leukoplakia)",
+                "২ সপ্তাহ বা তার বেশি সময় ধরে সাদা দাগ")
+        else:
+            add("MODERATE", "Recent white patch", "নতুন সাদা দাগ")
+
+    # ---------- lump in mouth or lip ----------
     if p.mouth_lump:
-        f.append(Finding("URGENT", "Lump in the mouth or on the lip (NICE NG12)",
-                         "মুখে বা ঠোঁটে চাকা বা ফোলা"))
-    if p.neck_lump and p.neck_lump_days > 21:
-        f.append(Finding("URGENT", "Persistent neck lump for more than 3 weeks (NICE NG12)",
-                         "৩ সপ্তাহের বেশি সময় ধরে গলায় চাকা"))
+        if p.mouth_lump_days > 21:
+            add("URGENT", "Lump in the mouth or lip for more than 3 weeks (NICE NG12)",
+                "৩ সপ্তাহের বেশি সময় ধরে মুখে বা ঠোঁটে চাকা")
+        else:
+            add("HIGH", "Recent lump in the mouth or lip (urgent if it persists past 3 weeks)",
+                "মুখে বা ঠোঁটে নতুন চাকা (৩ সপ্তাহের বেশি থাকলে জরুরি)")
+
+    # ---------- induration: firm on palpation ----------
+    if p.induration and (p.ulcer or p.red_patch or p.white_patch or p.mouth_lump):
+        add("URGENT", "Lesion feels hard on palpation (induration)",
+            "ঘা, দাগ বা চাকার জায়গা চাপ দিলে শক্ত লাগে")
+
+    # ---------- neck lump ----------
+    if p.neck_lump:
+        if p.neck_lump_days > 21:
+            add("URGENT", "Persistent neck lump for more than 3 weeks (NICE NG12)",
+                "৩ সপ্তাহের বেশি সময় ধরে গলায় চাকা")
+        else:
+            add("HIGH", "Recent neck lump (re-check; urgent if it persists past 3 weeks)",
+                "গলায় নতুন চাকা (৩ সপ্তাহের বেশি থাকলে জরুরি)")
+
+    # ---------- bleeding from a lesion ----------
     if p.unexplained_bleeding:
-        f.append(Finding("URGENT", "Unexplained oral bleeding (OCF)",
-                         "কারণ ছাড়া মুখ থেকে রক্ত পড়া"))
+        add("URGENT", "Bleeding from an oral lesion (OCF)", "মুখের ঘা বা দাগ থেকে রক্ত পড়া")
+
+    # ---------- numbness ----------
     if p.numbness:
-        f.append(Finding("URGENT", "Numbness of tongue, lip or mouth (OCF)",
-                         "জিভ, ঠোঁট বা মুখে অবশ ভাব"))
+        if p.numbness_days > 21:
+            add("URGENT", "Numbness of tongue, lip or mouth for more than 3 weeks (OCF)",
+                "৩ সপ্তাহের বেশি সময় ধরে অবশ ভাব")
+        else:
+            add("MODERATE", "Recent numbness", "নতুন অবশ ভাব")
+
+    # ---------- loose tooth (without trauma or long-standing gum disease) ----------
     if p.loose_tooth:
-        f.append(Finding("URGENT", "Sudden tooth mobility without cause (OCF)",
-                         "কারণ ছাড়া হঠাৎ দাঁত নড়া"))
+        add("HIGH", "Sudden tooth mobility without trauma or gum disease",
+            "আঘাত বা মাড়ির রোগ ছাড়া হঠাৎ দাঁত নড়া")
+
+    # ---------- difficulty swallowing ----------
     if p.dysphagia:
-        f.append(Finding("URGENT", "Difficulty swallowing or chewing (OCF, Mayo)",
-                         "গিলতে বা চিবাতে কষ্ট"))
+        if p.dysphagia_days > 21:
+            add("URGENT", "Difficulty swallowing or chewing for more than 3 weeks",
+                "৩ সপ্তাহের বেশি সময় ধরে গিলতে বা চিবাতে কষ্ট")
+        else:
+            add("MODERATE", "Recent difficulty swallowing or chewing",
+                "নতুন করে গিলতে বা চিবাতে কষ্ট")
 
-    # ---------- HIGH: dentist / oral surgeon within 4 weeks ----------
-    if p.ulcer and 14 <= p.ulcer_days <= 21:
-        f.append(Finding("HIGH", "Ulcer for 2-3 weeks (OCF 2-4 week rule)",
-                         "২–৩ সপ্তাহ ধরে ঘা"))
-    if p.white_patch and p.white_patch_days >= 14:
-        f.append(Finding("HIGH", "White patch for 2 weeks or more (possible leukoplakia)",
-                         "২ সপ্তাহ বা তার বেশি সময় ধরে সাদা দাগ"))
-    if p.neck_lump and p.neck_lump_days <= 21:
-        f.append(Finding("HIGH", "Recent neck lump (re-check; urgent if it persists past 3 weeks)",
-                         "গলায় নতুন চাকা (৩ সপ্তাহের বেশি থাকলে জরুরি)"))
-    if p.mouth_pain and p.mouth_pain_days >= 14:
-        f.append(Finding("HIGH", "Persistent mouth pain for 2 weeks or more",
-                         "২ সপ্তাহ বা তার বেশি সময় ধরে মুখে ব্যথা"))
+    # ---------- pain ----------
+    if p.mouth_pain:
+        if p.mouth_pain_days >= 14:
+            add("HIGH", "Persistent pain in the affected area for 2 weeks or more",
+                "২ সপ্তাহ বা তার বেশি সময় ধরে আক্রান্ত জায়গায় ব্যথা")
+        else:
+            add("MODERATE", "Recent mouth pain", "নতুন মুখের ব্যথা")
+
+    # ---------- oral submucous fibrosis signs ----------
     if p.reduced_mouth_opening:
-        f.append(Finding("HIGH", "Reduced mouth opening (possible oral submucous fibrosis)",
-                         "মুখ পুরো খুলতে না পারা (সাবমিউকাস ফাইব্রোসিসের লক্ষণ হতে পারে)"))
+        add("HIGH", "Reduced mouth opening (possible oral submucous fibrosis)",
+            "মুখ পুরো খুলতে না পারা (সাবমিউকাস ফাইব্রোসিসের লক্ষণ হতে পারে)")
+    if p.spicy_burning:
+        add("MODERATE", "Burning sensation with spicy food (early sign of oral submucous fibrosis)",
+            "ঝাল খেলে মুখ জ্বালা (সাবমিউকাস ফাইব্রোসিসের প্রথম লক্ষণ হতে পারে)")
 
-    # ---------- MODERATE: early or non-specific symptoms ----------
-    if p.ulcer and p.ulcer_days < 14:
-        f.append(Finding("MODERATE", "Recent ulcer (see a dentist if not healed within 2 weeks)",
-                         "নতুন ঘা (২ সপ্তাহে না শুকালে ডাক্তার দেখান)"))
-    if p.white_patch and p.white_patch_days < 14:
-        f.append(Finding("MODERATE", "Recent white patch",
-                         "নতুন সাদা দাগ"))
-    if p.mouth_pain and p.mouth_pain_days < 14:
-        f.append(Finding("MODERATE", "Recent mouth pain", "নতুন মুখের ব্যথা"))
+    # ---------- other ----------
     if p.ear_pain:
-        f.append(Finding("MODERATE", "Ear pain without ear disease (possible referred pain)",
-                         "কানের সমস্যা ছাড়া কান ব্যথা"))
+        add("MODERATE", "Ear pain without ear disease (possible referred pain)",
+            "কানের সমস্যা ছাড়া কান ব্যথা")
     if p.weight_loss:
-        f.append(Finding("MODERATE", "Unintentional weight loss", "অনিচ্ছাকৃত ওজন কমা"))
+        add("MODERATE", "Unintentional weight loss", "অনিচ্ছাকৃত ওজন কমা")
 
     return f

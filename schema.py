@@ -103,21 +103,39 @@ QUESTIONS = [
     Question("ulcer_days", "F", "ঘা-টি কত দিন ধরে আছে?", "int",
              min_value=0, max_value=3650, show_if=lambda a: a.get("ulcer") is True),
     Question("red_patch", "F",
-             "মুখের ভেতরে কি লাল দাগ, বা লাল-সাদা মেশানো দাগ আছে?", "bool", YES_NO),
+             "মুখের ভেতরে কি একটা নির্দিষ্ট লাল বা লাল-সাদা মেশানো দাগ আছে, যা আশেপাশ থেকে "
+             "আলাদা দেখায়? (পুরো মুখের স্বাভাবিক লালচে ভাব, জিভের ছোট লাল বিন্দু বা "
+             "কামড় লাগার দাগ ধরবেন না)", "bool", YES_NO),
+    Question("red_patch_days", "F", "লাল বা লাল-সাদা দাগটি কত দিন ধরে আছে?", "int",
+             min_value=0, max_value=3650, show_if=lambda a: a.get("red_patch") is True),
     Question("white_patch", "F",
              "মুখের ভেতরে কি সাদা দাগ আছে যা ঘষলেও ওঠে না?", "bool", YES_NO),
     Question("white_patch_days", "F", "সাদা দাগটি কত দিন ধরে আছে?", "int",
              min_value=0, max_value=3650, show_if=lambda a: a.get("white_patch") is True),
     Question("mouth_lump", "F",
              "মুখের ভেতরে বা ঠোঁটে কি কোনো চাকা, গুটি বা ফোলা আছে?", "bool", YES_NO),
+    Question("mouth_lump_days", "F", "চাকা বা ফোলাটি কত দিন ধরে আছে?", "int",
+             min_value=0, max_value=3650, show_if=lambda a: a.get("mouth_lump") is True),
+    Question("induration", "F",
+             "ঘা, দাগ বা চাকার জায়গায় আঙুল দিয়ে হালকা চাপলে কি শক্ত লাগে?", "bool", YES_NO,
+             show_if=lambda a: any(a.get(k) is True for k in
+                                   ("ulcer", "red_patch", "white_patch", "mouth_lump"))),
     Question("neck_lump", "F", "গলায় কি কোনো চাকা বা গুটি আছে?", "bool", YES_NO),
     Question("neck_lump_days", "F", "গলার চাকাটি কত দিন ধরে আছে?", "int",
              min_value=0, max_value=3650, show_if=lambda a: a.get("neck_lump") is True),
     Question("unexplained_bleeding", "F",
-             "কোনো কারণ ছাড়াই কি মুখ থেকে রক্ত পড়ে?", "bool", YES_NO),
+             "মুখের কোনো ঘা বা দাগ থেকে কি রক্ত পড়ে? (দাঁত মাজার সময় মাড়ি থেকে রক্ত পড়া "
+             "ধরবেন না)", "bool", YES_NO),
     Question("numbness", "F", "জিভ, ঠোঁট বা মুখে কি অবশ ভাব লাগে?", "bool", YES_NO),
-    Question("loose_tooth", "F", "কোনো কারণ ছাড়া কি হঠাৎ দাঁত নড়ে গেছে?", "bool", YES_NO),
+    Question("numbness_days", "F", "অবশ ভাবটি কত দিন ধরে আছে?", "int",
+             min_value=0, max_value=3650, show_if=lambda a: a.get("numbness") is True),
+    Question("loose_tooth", "F",
+             "আঘাত বা অনেক দিনের মাড়ির রোগ ছাড়া কি হঠাৎ দাঁত নড়ে গেছে?", "bool", YES_NO),
     Question("dysphagia", "F", "খাবার গিলতে বা চিবাতে কি কষ্ট হয়?", "bool", YES_NO),
+    Question("dysphagia_days", "F", "গিলতে বা চিবাতে কষ্ট কত দিন ধরে হচ্ছে?", "int",
+             min_value=0, max_value=3650, show_if=lambda a: a.get("dysphagia") is True),
+    Question("spicy_burning", "F",
+             "ঝাল খাবার খেলে কি মুখের ভেতর জ্বালা করে?", "bool", YES_NO),
     Question("reduced_mouth_opening", "F",
              "মুখ কি আগের মতো পুরো খুলতে পারেন না?", "bool", YES_NO),
     Question("ear_pain", "F", "কানে কোনো সমস্যা ছাড়াই কি কান ব্যথা করে?", "bool", YES_NO),
@@ -165,15 +183,21 @@ class Patient:
     ulcer: bool = False
     ulcer_days: int = 0
     red_patch: bool = False
+    red_patch_days: int = 0
     white_patch: bool = False
     white_patch_days: int = 0
     mouth_lump: bool = False
+    mouth_lump_days: int = 0
+    induration: bool = False
     neck_lump: bool = False
     neck_lump_days: int = 0
     unexplained_bleeding: bool = False
     numbness: bool = False
+    numbness_days: int = 0
     loose_tooth: bool = False
     dysphagia: bool = False
+    dysphagia_days: int = 0
+    spicy_burning: bool = False
     reduced_mouth_opening: bool = False
     ear_pain: bool = False
     weight_loss: bool = False
