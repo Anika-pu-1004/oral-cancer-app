@@ -49,10 +49,11 @@ QUESTIONS = [
     Question("other_slt", "B",
              "পান ছাড়া আলাদাভাবে গুল, সাদাপাতা বা খৈনি ব্যবহার করেন (বা করতেন)?",
              "bool", YES_NO, show_if=_uses_slt),
+    # Asked only of people who never used jorda/tobacco: for tobacco users the
+    # tobacco risk already dominates, and the question would only confuse them.
     Question("bq_without_tobacco", "B",
-             "আপনি কি জর্দা বা তামাক ছাড়া শুধু পান-সুপারি খান (বা আগে খেতেন)?", "bool",
-             {True: "হ্যাঁ, জর্দা বা তামাক ছাড়া শুধু পান-সুপারি খাই",
-              False: "না (পান খাই না, অথবা জর্দা দিয়ে খাই)"}),
+             "আপনি কি পান-সুপারি খান (বা আগে খেতেন)?", "bool", YES_NO,
+             show_if=lambda a: a.get("slt_status") == "never"),
     Question("slt_freq_per_day", "B",
              "দিনে কতবার পান, জর্দা বা তামাক খান (বা খেতেন)?", "int",
              min_value=0, max_value=100, show_if=_uses_chew),
