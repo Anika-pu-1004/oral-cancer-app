@@ -41,6 +41,7 @@ class HabitScore:
     combined_or: float                # exp(S)
     terms: list = field(default_factory=list)
     context_factors: list = field(default_factory=list)  # risk factors without an OR yet
+    context_factors_bn: list = field(default_factory=list)  # same, in Bengali for the app
 
 
 def _or(key: str, override: Optional[dict]) -> float:
@@ -92,14 +93,22 @@ def habit_score(p: Patient, or_override: Optional[dict] = None) -> HabitScore:
     s = sum(math.log(t.odds_ratio) for t in terms)
 
     # ---- 4. Context factors (used by triage rules, not weighted yet) ----
-    ctx = []
+    # Age, previous cancer and known OPMD are used directly by triage.py, so the
+    # Bengali list below shows only the factors that do NOT change the level.
+    ctx, ctx_bn = [], []
     if p.age >= 40:              ctx.append("Age 40 or older")
     if p.prev_oral_cancer:       ctx.append("Previous head and neck cancer")
     if p.known_opmd == "yes":    ctx.append("Known oral potentially malignant disorder")
-    if p.family_history_hnc:     ctx.append("Family history of head and neck cancer")
-    if p.immunosuppressed:       ctx.append("Weakened immune system")
-    if p.outdoor_sun_work:       ctx.append("Outdoor sun exposure (lip)")
-    if p.chronic_irritation:     ctx.append("Chronic irritation from sharp tooth or denture")
-    if p.low_fruit_veg:          ctx.append("Low fruit and vegetable intake")
+    for flag, en, bn in [
+        (p.family_history_hnc, "Family history of head and neck cancer", "পরিবারে মুখ বা গলার ক্যান্সার"),
+        (p.immunosuppressed, "Weakened immune system", "রোগ প্রতিরোধ ক্ষমতা কম (HIV, প্রতিস্থাপন, স্টেরয়েড বা কেমো)"),
+        (p.outdoor_sun_work, "Outdoor sun exposure (lip)", "বেশিরভাগ সময় রোদে কাজ (ঠোঁটের ঝুঁকি)"),
+        (p.chronic_irritation, "Chronic irritation from sharp tooth or denture", "ধারালো দাঁত বা নকল দাঁতের ঘষা"),
+        (p.low_fruit_veg, "Low fruit and vegetable intake", "ফল ও শাকসবজি কম খাওয়া"),
+    ]:
+        if flag:
+            ctx.append(en)
+            ctx_bn.append(bn)
 
-    return HabitScore(log_score=s, combined_or=math.exp(s), terms=terms, context_factors=ctx)
+    return HabitScore(log_score=s, combined_or=math.exp(s), terms=terms,
+                      context_factors=ctx, context_factors_bn=ctx_bn)

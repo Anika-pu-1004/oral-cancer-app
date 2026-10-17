@@ -5,9 +5,13 @@ Bengali web app for community health workers.
 
   1. Questionnaire (sections A-F)      -> triage.py  (red flags + risk score)
   2. Optional mouth photo               -> image_model.py (suspicion score)
-  3. Final urgency level: 🔴 🟠 🟡 🟢
+  3. Final urgency level: 🚨 ⚠️ 🔍 ✅
 
-Safety rule: the photo can only RAISE the urgency level, never lower it.
+Photo rule (16 Oct revision): the image model is weak (AUC 0.82 on 100 internet
+photos, specificity only 0.67) and it called a normal red tongue "suspicious".
+So the photo can only raise the level by ONE small step, from LOW to MODERATE,
+and only when its score is very high (STRONG_PHOTO_SCORE). It never lowers
+the level and never sends anyone to a specialist on its own.
 
 The result is shown in three steps so the health worker can see WHY:
   step 1 = level from the questionnaire, step 2 = photo analysis,
@@ -20,7 +24,7 @@ Run with:  streamlit run app.py
 import streamlit as st
 
 from schema import QUESTIONS, patient_from_answers
-from triage import triage, LEVELS, ADVICE_BN, DISCLAIMER_BN
+from triage import triage, LEVELS, ADVICE_BN, DISCLAIMER_BN, QUIT_ADVICE_BN, RECHECK_ADVICE_BN
 from image_model import load_model, suspicion_score, MODEL_FILE
 
 # ---------------------------------------------------------------- settings
@@ -41,7 +45,8 @@ LEVEL_COLOUR = {"URGENT": "#A32D2D", "HIGH": "#FAC775", "MODERATE": "#B5D4F4", "
 LEVEL_TEXT = {"URGENT": "#FCEBEB", "HIGH": "#412402", "MODERATE": "#042C53", "LOW": "#173404"}
 LEVEL_EDGE = {"URGENT": "#791F1F", "HIGH": "#BA7517", "MODERATE": "#378ADD", "LOW": "#639922"}
 LEVEL_STEP = {"URGENT": "৪", "HIGH": "৩", "MODERATE": "২", "LOW": "১"}
-IMAGE_RAISES_TO = "HIGH"          # a suspicious photo raises the level to at least HIGH
+IMAGE_RAISES_TO = "MODERATE"      # a strongly suspicious photo raises LOW to MODERATE, no further
+STRONG_PHOTO_SCORE = 0.70         # photo counts only at 70% or more (model's own cut-off is 0.38)
 
 st.set_page_config(page_title="মুখের ক্যান্সার ঝুঁকি নির্ণয়", page_icon="🦷", layout="centered")
 
@@ -53,7 +58,7 @@ def get_image_model():
 
 
 def combine(question_level: str, photo_suspicious: bool) -> str:
-    """Final level: the photo can raise the level to HIGH, never lower it."""
+    """Final level: a strongly suspicious photo raises LOW to MODERATE; it never lowers."""
     if photo_suspicious and LEVELS.index(IMAGE_RAISES_TO) > LEVELS.index(question_level):
         return IMAGE_RAISES_TO
     return question_level
@@ -162,7 +167,6 @@ if st.button("✅ ফলাফল দেখুন", type="primary", use_containe
     patient = patient_from_answers(answers)
     result = triage(patient)
     question_level = result.level
-    reasons_bn = list(result.reasons_bn)
 
     # 3. photo
     model = get_image_model()
@@ -171,13 +175,12 @@ if st.button("✅ ফলাফল দেখুন", type="primary", use_containe
         photo_state = "no_model"
     elif photo is not None:
         photo.seek(0)
-        prob, suspicious, feats = suspicion_score(photo, model)
+        prob, _, feats = suspicion_score(photo, model)
         if feats["mean_L"] < 15 or feats["mean_L"] > 92:
-            photo_state, suspicious = "bad_light", False
+            photo_state = "bad_light"
         else:
+            suspicious = prob >= STRONG_PHOTO_SCORE
             photo_state = "suspicious" if suspicious else "clear"
-    if suspicious:
-        reasons_bn.append("ছবিতে সম্ভাব্য সন্দেহজনক চিহ্ন")
 
     level = combine(question_level, suspicious)
 
@@ -193,8 +196,14 @@ if st.button("✅ ফলাফল দেখুন", type="primary", use_containe
     if result.reasons_bn:
         for r in result.reasons_bn:
             st.write(f"• {r}")
+    elif result.has_habits:
+        st.write("• কোনো উপসর্গ পাওয়া যায়নি। ঝুঁকির অভ্যাস আছে (তামাক, পান, ধূমপান বা মদ), "
+                 "তবে বয়স ও অভ্যাসের পরিমাণ মিলিয়ে ঝুঁকি এখনো মাঝারি স্তরে পৌঁছায়নি")
     else:
         st.write("• কোনো ঝুঁকির উপসর্গ বা অভ্যাস পাওয়া যায়নি")
+    if result.score.context_factors_bn:
+        st.write("• আরও যা জানা গেল (লেখা রাখা হলো, তবে স্তর বদলায়নি, কারণ এগুলোর "
+                 "নির্ভরযোগ্য হিসাব এখনো নেই): " + ", ".join(result.score.context_factors_bn))
 
     st.markdown("**ধাপ ২: ছবির বিশ্লেষণ:**")
     if photo_state == "none":
@@ -206,14 +215,16 @@ if st.button("✅ ফলাফল দেখুন", type="primary", use_containe
                  "ভালো আলোতে আবার তুলুন।")
     else:
         st.progress(min(max(prob, 0.0), 1.0),
-                    text=f"সন্দেহের স্কোর: {prob:.0%}  (সীমা: {model['threshold']:.0%})")
+                    text=f"ছবির স্কোর: {prob:.0%}  (গোনা হয় শুধু {STRONG_PHOTO_SCORE:.0%} বা বেশি হলে)")
         if photo_state == "suspicious":
-            st.write("• 📷 ছবিতে **সম্ভাব্য** সন্দেহজনক চিহ্ন দেখা গেছে। একজন ডাক্তারের দেখা দরকার।")
+            st.write("• 📷 ছবির রং ও গঠন কিছুটা অস্বাভাবিক মনে হচ্ছে। এটি রোগ নির্ণয় নয়; "
+                     "একজন দন্ত চিকিৎসক দিয়ে মুখ দেখিয়ে নিন।")
         else:
-            st.write("• 📷 ছবিতে স্পষ্ট সন্দেহজনক চিহ্ন পাওয়া যায়নি। তবে এটি নিশ্চয়তা নয়; "
-                     "উপসর্গ থাকলে ডাক্তার দেখান।")
-        st.caption("ছবির বিশ্লেষণ শুধু সহায়ক। এটি কখনো কখনো স্বাভাবিক লাল জিভকেও "
-                   "সন্দেহজনক বলতে পারে। চূড়ান্ত সিদ্ধান্ত ডাক্তারের।")
+            st.write("• 📷 ছবি থেকে আলাদা করে কিছু বলার মতো পাওয়া যায়নি, তাই ফলাফল শুধু "
+                     "প্রশ্নের উত্তরের উপর নির্ভর করছে।")
+        st.caption("ছবির মডেলটি এখনো দুর্বল (ইন্টারনেটের মাত্র ১০০টি ছবি দিয়ে শেখানো) এবং "
+                   "স্বাভাবিক লাল জিভকেও ভুল করে সন্দেহ করতে পারে। তাই ছবি একা কাউকে "
+                   "বিশেষজ্ঞের কাছে পাঠায় না। চূড়ান্ত সিদ্ধান্ত ডাক্তারের।")
 
     st.markdown("**ধাপ ৩: চূড়ান্ত ফলাফল:**")
     if level != question_level:
@@ -221,18 +232,25 @@ if st.button("✅ ফলাফল দেখুন", type="primary", use_containe
                  f"**{ADVICE_BN[level][0]} {LEVEL_BN[level]}**: ছবির কারণে স্তর বেড়েছে")
     elif photo_state in ("suspicious", "clear"):
         st.write(f"• {ADVICE_BN[level][0]} **{LEVEL_BN[level]}**: ছবি স্তর বদলায়নি "
-                 "(ছবি কখনো স্তর কমায় না, আর সর্বোচ্চ উচ্চ ঝুঁকি পর্যন্ত বাড়াতে পারে)")
+                 "(ছবি কখনো স্তর কমায় না; শুধু কম ঝুঁকি থেকে মাঝারি ঝুঁকি পর্যন্ত বাড়াতে পারে)")
     else:
         st.write(f"• {ADVICE_BN[level][0]} **{LEVEL_BN[level]}**")
+
+    # 6. extra advice
+    if result.recheck_in_2_weeks and level == "MODERATE":
+        st.info(RECHECK_ADVICE_BN)
+    if result.has_habits:
+        st.info(QUIT_ADVICE_BN)
 
     with st.expander("🔍 বিস্তারিত (স্বাস্থ্যকর্মী ও গবেষকের জন্য)"):
         st.write(f"অভ্যাসের সম্মিলিত Odds Ratio: **{result.score.combined_or:.2f}**")
         for t in result.score.terms:
             st.write(f"- {t.key}: OR = {t.odds_ratio:.2f} ({t.reason})")
         if result.score.context_factors:
-            st.write("অন্যান্য ঝুঁকি: " + ", ".join(result.score.context_factors))
+            st.write("Context factors (not weighted): " + ", ".join(result.score.context_factors))
         if model is not None:
             st.write(f"ছবির মডেল: AUC = {model['cv_auc']:.2f}, "
                      f"sensitivity = {model['cv_sensitivity']:.2f}, "
                      f"specificity = {model['cv_specificity']:.2f}, "
-                     f"threshold = {model['threshold']:.2f}")
+                     f"model threshold = {model['threshold']:.2f}, "
+                     f"used in the app only at >= {STRONG_PHOTO_SCORE:.2f}")

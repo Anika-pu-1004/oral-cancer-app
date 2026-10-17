@@ -2,8 +2,15 @@
 red_flags.py
 ------------
 Symptom rules. These are checked BEFORE the risk score and can never be
-lowered by it: a person with a red-flag sign is always URGENT, whatever
-their habits.
+lowered by it (habits can only raise the level, never lower it).
+
+Duration rule used for every symptom that has a duration (16 Oct revision,
+made consistent across symptoms):
+    ulcer, red patch, numbness, swallowing difficulty:
+        less than 14 days -> MODERATE (re-check after 2 weeks), 14-21 -> HIGH, > 21 -> URGENT
+    white patch, pain:          < 14 days -> MODERATE, 14 or more -> HIGH
+    mouth lump, neck lump:      up to 21 days -> HIGH, > 21 -> URGENT
+    hard lesion, unexplained bleeding from a lesion -> URGENT at any duration
 
 Sources: NICE NG12 suspected cancer referral guideline (UK); Oral Cancer
 Foundation / CDC background paper (2-4 week rule); Mayo Clinic symptom list.
@@ -18,6 +25,7 @@ class Finding:
     level: str        # "URGENT" or "HIGH" or "MODERATE"
     reason_en: str    # for the report
     reason_bn: str    # shown in the app
+    recent: bool = False  # a symptom under 14 days whose level rises if it persists
 
 
 def check_red_flags(p: Patient) -> list:
@@ -26,8 +34,8 @@ def check_red_flags(p: Patient) -> list:
     reported by lay observers do not trigger an urgent referral."""
     f = []
 
-    def add(level, en, bn):
-        f.append(Finding(level, en, bn))
+    def add(level, en, bn, recent=False):
+        f.append(Finding(level, en, bn, recent))
 
     # ---------- ulcer ----------
     if p.ulcer:
@@ -37,8 +45,8 @@ def check_red_flags(p: Patient) -> list:
         elif p.ulcer_days >= 14:
             add("HIGH", "Ulcer for 2-3 weeks (OCF 2-4 week rule)", "২–৩ সপ্তাহ ধরে ঘা")
         else:
-            add("MODERATE", "Recent ulcer (see a dentist if not healed within 2 weeks)",
-                "নতুন ঘা (২ সপ্তাহে না শুকালে ডাক্তার দেখান)")
+            add("MODERATE", "Recent ulcer (re-check if not healed within 2 weeks)",
+                "নতুন ঘা (২ সপ্তাহের কম)", recent=True)
 
     # ---------- distinct red or red-and-white patch ----------
     if p.red_patch:
@@ -50,7 +58,7 @@ def check_red_flags(p: Patient) -> list:
                 "২–৩ সপ্তাহ ধরে লাল বা লাল-সাদা দাগ")
         else:
             add("MODERATE", "Recent red patch (re-check if not gone within 2 weeks)",
-                "নতুন লাল দাগ (২ সপ্তাহে না সারলে ডাক্তার দেখান)")
+                "নতুন লাল দাগ (২ সপ্তাহের কম)", recent=True)
 
     # ---------- white patch ----------
     if p.white_patch:
@@ -58,7 +66,7 @@ def check_red_flags(p: Patient) -> list:
             add("HIGH", "White patch for 2 weeks or more (possible leukoplakia)",
                 "২ সপ্তাহ বা তার বেশি সময় ধরে সাদা দাগ")
         else:
-            add("MODERATE", "Recent white patch", "নতুন সাদা দাগ")
+            add("MODERATE", "Recent white patch", "নতুন সাদা দাগ (২ সপ্তাহের কম)", recent=True)
 
     # ---------- lump in mouth or lip ----------
     if p.mouth_lump:
@@ -85,15 +93,18 @@ def check_red_flags(p: Patient) -> list:
 
     # ---------- bleeding from a lesion ----------
     if p.unexplained_bleeding:
-        add("URGENT", "Bleeding from an oral lesion (OCF)", "মুখের ঘা বা দাগ থেকে রক্ত পড়া")
+        add("URGENT", "Unexplained bleeding from an oral lesion (OCF)",
+            "কারণ ছাড়াই ঘা, দাগ বা চাকা থেকে রক্ত পড়া")
 
     # ---------- numbness ----------
     if p.numbness:
         if p.numbness_days > 21:
             add("URGENT", "Numbness of tongue, lip or mouth for more than 3 weeks (OCF)",
                 "৩ সপ্তাহের বেশি সময় ধরে অবশ ভাব")
+        elif p.numbness_days >= 14:
+            add("HIGH", "Numbness for 2-3 weeks", "২–৩ সপ্তাহ ধরে অবশ ভাব")
         else:
-            add("MODERATE", "Recent numbness", "নতুন অবশ ভাব")
+            add("MODERATE", "Recent numbness", "নতুন অবশ ভাব (২ সপ্তাহের কম)", recent=True)
 
     # ---------- loose tooth (without trauma or long-standing gum disease) ----------
     if p.loose_tooth:
@@ -105,9 +116,12 @@ def check_red_flags(p: Patient) -> list:
         if p.dysphagia_days > 21:
             add("URGENT", "Difficulty swallowing or chewing for more than 3 weeks",
                 "৩ সপ্তাহের বেশি সময় ধরে গিলতে বা চিবাতে কষ্ট")
+        elif p.dysphagia_days >= 14:
+            add("HIGH", "Difficulty swallowing or chewing for 2-3 weeks",
+                "২–৩ সপ্তাহ ধরে গিলতে বা চিবাতে কষ্ট")
         else:
             add("MODERATE", "Recent difficulty swallowing or chewing",
-                "নতুন করে গিলতে বা চিবাতে কষ্ট")
+                "নতুন করে গিলতে বা চিবাতে কষ্ট (২ সপ্তাহের কম)", recent=True)
 
     # ---------- pain ----------
     if p.mouth_pain:
@@ -115,15 +129,15 @@ def check_red_flags(p: Patient) -> list:
             add("HIGH", "Persistent pain in the affected area for 2 weeks or more",
                 "২ সপ্তাহ বা তার বেশি সময় ধরে আক্রান্ত জায়গায় ব্যথা")
         else:
-            add("MODERATE", "Recent mouth pain", "নতুন মুখের ব্যথা")
+            add("MODERATE", "Recent mouth pain", "মুখের ভেতরে নতুন ব্যথা (২ সপ্তাহের কম)", recent=True)
 
     # ---------- oral submucous fibrosis signs ----------
     if p.reduced_mouth_opening:
         add("HIGH", "Reduced mouth opening (possible oral submucous fibrosis)",
-            "মুখ পুরো খুলতে না পারা (সাবমিউকাস ফাইব্রোসিসের লক্ষণ হতে পারে)")
+            "মুখে তিন আঙুল ঢোকে না (মুখের চামড়া শক্ত হওয়ার রোগের লক্ষণ হতে পারে)")
     if p.spicy_burning:
-        add("MODERATE", "Burning sensation with spicy food (early sign of oral submucous fibrosis)",
-            "ঝাল খেলে মুখ জ্বালা (সাবমিউকাস ফাইব্রোসিসের প্রথম লক্ষণ হতে পারে)")
+        add("MODERATE", "New intolerance to spicy food, burning (early sign of oral submucous fibrosis)",
+            "অল্প ঝালেও মুখ জ্বালা (মুখের চামড়া শক্ত হওয়ার রোগের প্রথম লক্ষণ হতে পারে)")
 
     # ---------- other ----------
     if p.ear_pain:

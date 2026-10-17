@@ -29,10 +29,19 @@ ADVICE_BN = {
     "URGENT": ("🚨", "জরুরি: ২ সপ্তাহের মধ্যে একজন বিশেষজ্ঞ (ওরাল সার্জন বা নাক-কান-গলা "
                     "বিশেষজ্ঞ) দেখান।"),
     "HIGH": ("⚠️", "৪ সপ্তাহের মধ্যে একজন দন্ত চিকিৎসক বা ওরাল সার্জন দেখান।"),
-    "MODERATE": ("🔍", "আগামী ৩ মাসের মধ্যে মুখ পরীক্ষা করান। তামাক ও পান ছাড়ার চেষ্টা করুন।"),
+    "MODERATE": ("🔍", "আগামী ৩ মাসের মধ্যে একজন দন্ত চিকিৎসক দিয়ে মুখ পরীক্ষা করান।"),
     "LOW": ("✅", "এখন বড় কোনো ঝুঁকির লক্ষণ নেই। নিয়মিত মুখ পরীক্ষা করান। মুখে কোনো ঘা বা দাগ "
-                 "২ সপ্তাহের বেশি থাকলে অবশ্যই ডাক্তার দেখান।"),
+                 "২ সপ্তাহ বা তার বেশি থাকলে অবশ্যই ডাক্তার দেখান।"),
 }
+
+# Shown only to people who use tobacco, betel quid or alcohol (at any level).
+QUIT_ADVICE_BN = "🚭 তামাক, জর্দা, পান-সুপারি, ধূমপান ও মদ ছাড়লে মুখের ক্যান্সারের ঝুঁকি কমে।"
+
+# Shown when a symptom is new (less than 2 weeks): most such signs heal by themselves,
+# so the person is asked to come back instead of being sent straight to a specialist.
+RECHECK_ADVICE_BN = ("🔁 উপসর্গটি নতুন (২ সপ্তাহের কম)। বেশিরভাগ এমন ঘা বা দাগ নিজে থেকেই সেরে "
+                     "যায়। ২ সপ্তাহ পর আবার মুখ দেখুন। তখনো থাকলে দেরি না করে দন্ত চিকিৎসক "
+                     "দেখান, অথবা আবার এই অ্যাপে দিন (তখন ফলাফল বেড়ে যাবে)।")
 
 DISCLAIMER_BN = ("এই ফলাফল রোগ নির্ণয় নয়। এটি শুধু বলে দেয় কত দ্রুত ডাক্তার দেখানো উচিত। "
                  "নিশ্চিতভাবে জানার একমাত্র উপায় ডাক্তারের পরীক্ষা ও বায়োপসি।")
@@ -46,6 +55,8 @@ class TriageResult:
     reasons_en: list = field(default_factory=list)
     reasons_bn: list = field(default_factory=list)
     score: Optional[HabitScore] = None
+    recheck_in_2_weeks: bool = False      # a new (< 2 weeks) symptom that rises if it persists
+    has_habits: bool = False              # uses tobacco / betel quid / alcohol
 
 
 def _raise(current: str, new: str) -> str:
@@ -95,7 +106,9 @@ def triage(p: Patient, or_override: Optional[dict] = None) -> TriageResult:
         reasons_bn.append("উচ্চ ঝুঁকির মানুষের মধ্যে নতুন উপসর্গ")
 
     emoji, advice = ADVICE_BN[level]
-    return TriageResult(level, emoji, advice, reasons_en, reasons_bn, hs)
+    has_habits = bool(hs.terms) or p.alcohol_status in ("former", "current")
+    return TriageResult(level, emoji, advice, reasons_en, reasons_bn, hs,
+                        recheck_in_2_weeks=any(f.recent for f in findings), has_habits=has_habits)
 
 
 def print_result(name: str, r: TriageResult) -> None:
