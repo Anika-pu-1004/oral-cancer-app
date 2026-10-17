@@ -12,6 +12,11 @@ photos, specificity only 0.67) and it called a normal red tongue "suspicious".
 So the photo can only raise the level by ONE small step, from LOW to MODERATE,
 and only when its score is very high (STRONG_PHOTO_SCORE). It never lowers
 the level and never sends anyone to a specialist on its own.
+Middle zone (17 Oct): if the score is at or above the model's own screening
+cut-off (0.38) but no ulcer, patch or lump was recorded, a yellow warning asks
+the health worker to examine the mouth again (the level itself is unchanged).
+Reason: a textbook photo of a clear lip ulcer scored 68% while the answers said
+"no ulcer", and the app showed LOW without any warning.
 
 The result is shown in three steps so the health worker can see WHY:
   step 1 = level from the questionnaire, step 2 = photo analysis,
@@ -23,7 +28,7 @@ Run with:  streamlit run app.py
 
 import streamlit as st
 
-from schema import QUESTIONS, patient_from_answers
+from schema import QUESTIONS, patient_from_answers, _has_lesion
 from triage import triage, LEVELS, ADVICE_BN, DISCLAIMER_BN, QUIT_ADVICE_BN, RECHECK_ADVICE_BN
 from image_model import load_model, suspicion_score, MODEL_FILE
 
@@ -184,6 +189,16 @@ if st.button("✅ ফলাফল দেখুন", type="primary", use_containe
 
     level = combine(question_level, suspicious)
 
+    # photo looks unusual but no lesion was recorded -> ask to look again
+    no_lesion_recorded = not _has_lesion(answers)
+    recheck_mouth = (photo_state in ("suspicious", "clear")
+                     and prob >= model["threshold"] and no_lesion_recorded)
+    if recheck_mouth:
+        st.warning("🟡 **মুখ আবার দেখুন:** ছবিতে অস্বাভাবিক কিছু থাকতে পারে, কিন্তু প্রশ্নে "
+                   "কোনো ঘা, দাগ বা চাকার কথা বলা হয়নি। টর্চ দিয়ে রোগীর মুখ ও ঠোঁট আবার ভালো "
+                   "করে দেখুন। ঘা, দাগ বা চাকা থাকলে উপরের প্রশ্নের উত্তর ঠিক করে আবার "
+                   "**ফলাফল দেখুন** চাপুন।")
+
     # 4. final result + ladder
     st.markdown(result_box_html(level), unsafe_allow_html=True)
     st.markdown("&nbsp;", unsafe_allow_html=True)
@@ -219,6 +234,9 @@ if st.button("✅ ফলাফল দেখুন", type="primary", use_containe
         if photo_state == "suspicious":
             st.write("• 📷 ছবির রং ও গঠন কিছুটা অস্বাভাবিক মনে হচ্ছে। এটি রোগ নির্ণয় নয়; "
                      "একজন দন্ত চিকিৎসক দিয়ে মুখ দেখিয়ে নিন।")
+        elif recheck_mouth:
+            st.write("• 📷 ছবির স্কোর মাঝামাঝি। স্তর বদলায়নি, তবে মুখ আবার দেখতে বলা হয়েছে "
+                     "(উপরের হলুদ বার্তা দেখুন)।")
         else:
             st.write("• 📷 ছবি থেকে আলাদা করে কিছু বলার মতো পাওয়া যায়নি, তাই ফলাফল শুধু "
                      "প্রশ্নের উত্তরের উপর নির্ভর করছে।")
