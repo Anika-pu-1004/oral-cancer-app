@@ -1,19 +1,20 @@
 """
 red_flags.py
 ------------
-Symptom rules. These are checked BEFORE the risk score and can never be
-lowered by it (habits can only raise the level, never lower it).
+Clinical safety rules for the things a photo cannot show: how long a lesion
+has been there, whether it is hard or bleeding, a neck lump, and mouth opening.
+Habits and the photo can only RAISE the level set here, never lower it.
 
-Duration rule used for every symptom that has a duration (16 Oct revision,
-made consistent across symptoms):
-    ulcer, red patch, numbness, swallowing difficulty:
-        less than 14 days -> MODERATE (re-check after 2 weeks), 14-21 -> HIGH, > 21 -> URGENT
-    white patch, pain:          < 14 days -> MODERATE, 14 or more -> HIGH
-    mouth lump, neck lump:      up to 21 days -> HIGH, > 21 -> URGENT
-    hard lesion, unexplained bleeding from a lesion -> URGENT at any duration
-
-Sources: NICE NG12 suspected cancer referral guideline (UK); Oral Cancer
-Foundation / CDC background paper (2-4 week rule); Mayo Clinic symptom list.
+Rules (clinical "RULE": a single lesion persisting 3 weeks or more is
+suspicious; NICE NG12 suspected cancer guideline; Oral Cancer Foundation):
+    ulcer / red or white patch / lump in mouth or lip:
+        less than 14 days -> MODERATE (re-check after 2 weeks)
+        14 to 21 days     -> HIGH
+        more than 21 days -> URGENT
+    lesion that feels hard (induration)            -> URGENT
+    lesion that bleeds without a cause             -> URGENT
+    neck lump: up to 21 days -> HIGH, more than 21 -> URGENT
+    three fingers do not fit (possible OSMF)       -> HIGH
 """
 
 from dataclasses import dataclass
@@ -22,128 +23,43 @@ from schema import Patient
 
 @dataclass
 class Finding:
-    level: str        # "URGENT" or "HIGH" or "MODERATE"
-    reason_en: str    # for the report
-    reason_bn: str    # shown in the app
-    recent: bool = False  # a symptom under 14 days whose level rises if it persists
+    level: str            # "URGENT", "HIGH" or "MODERATE"
+    reason_en: str        # for the report
+    reason_bn: str        # shown in the app
+    recent: bool = False  # a lesion under 14 days whose level rises if it persists
 
 
 def check_red_flags(p: Patient) -> list:
-    """Symptom rules. Duration thresholds follow the clinical 'RULE' (a single lesion
-    persisting 3 weeks or more is suspicious) so that short-lived, harmless findings
-    reported by lay observers do not trigger an urgent referral."""
     f = []
 
     def add(level, en, bn, recent=False):
         f.append(Finding(level, en, bn, recent))
 
-    # ---------- ulcer ----------
-    if p.ulcer:
-        if p.ulcer_days > 21:
-            add("URGENT", "Non-healing ulcer for more than 3 weeks (NICE NG12)",
-                "৩ সপ্তাহের বেশি সময় ধরে না-শুকানো ঘা")
-        elif p.ulcer_days >= 14:
-            add("HIGH", "Ulcer for 2-3 weeks (OCF 2-4 week rule)", "২–৩ সপ্তাহ ধরে ঘা")
+    if p.lesion:
+        if p.lesion_days > 21:
+            add("URGENT", "Lesion (ulcer, patch or lump) for more than 3 weeks (NICE NG12, RULE)",
+                "৩ সপ্তাহের বেশি সময় ধরে ঘা, দাগ বা চাকা")
+        elif p.lesion_days >= 14:
+            add("HIGH", "Lesion for 2-3 weeks", "২–৩ সপ্তাহ ধরে ঘা, দাগ বা চাকা")
         else:
-            add("MODERATE", "Recent ulcer (re-check if not healed within 2 weeks)",
-                "নতুন ঘা (২ সপ্তাহের কম)", recent=True)
+            add("MODERATE", "Recent lesion, less than 2 weeks (re-check after 2 weeks)",
+                "নতুন ঘা, দাগ বা চাকা (২ সপ্তাহের কম)", recent=True)
+        if p.induration:
+            add("URGENT", "Lesion feels hard on palpation (induration)",
+                "ঘা, দাগ বা চাকার জায়গা চাপ দিলে শক্ত লাগে")
+        if p.unexplained_bleeding:
+            add("URGENT", "Unexplained bleeding from the lesion (OCF)",
+                "কারণ ছাড়াই ঘা, দাগ বা চাকা থেকে রক্ত পড়া")
 
-    # ---------- distinct red or red-and-white patch ----------
-    if p.red_patch:
-        if p.red_patch_days > 21:
-            add("URGENT", "Distinct red or red-and-white patch for more than 3 weeks (NICE NG12, RULE)",
-                "৩ সপ্তাহের বেশি সময় ধরে লাল বা লাল-সাদা দাগ")
-        elif p.red_patch_days >= 14:
-            add("HIGH", "Distinct red or red-and-white patch for 2-3 weeks",
-                "২–৩ সপ্তাহ ধরে লাল বা লাল-সাদা দাগ")
-        else:
-            add("MODERATE", "Recent red patch (re-check if not gone within 2 weeks)",
-                "নতুন লাল দাগ (২ সপ্তাহের কম)", recent=True)
-
-    # ---------- white patch ----------
-    if p.white_patch:
-        if p.white_patch_days >= 14:
-            add("HIGH", "White patch for 2 weeks or more (possible leukoplakia)",
-                "২ সপ্তাহ বা তার বেশি সময় ধরে সাদা দাগ")
-        else:
-            add("MODERATE", "Recent white patch", "নতুন সাদা দাগ (২ সপ্তাহের কম)", recent=True)
-
-    # ---------- lump in mouth or lip ----------
-    if p.mouth_lump:
-        if p.mouth_lump_days > 21:
-            add("URGENT", "Lump in the mouth or lip for more than 3 weeks (NICE NG12)",
-                "৩ সপ্তাহের বেশি সময় ধরে মুখে বা ঠোঁটে চাকা")
-        else:
-            add("HIGH", "Recent lump in the mouth or lip (urgent if it persists past 3 weeks)",
-                "মুখে বা ঠোঁটে নতুন চাকা (৩ সপ্তাহের বেশি থাকলে জরুরি)")
-
-    # ---------- induration: firm on palpation ----------
-    if p.induration and (p.ulcer or p.red_patch or p.white_patch or p.mouth_lump):
-        add("URGENT", "Lesion feels hard on palpation (induration)",
-            "ঘা, দাগ বা চাকার জায়গা চাপ দিলে শক্ত লাগে")
-
-    # ---------- neck lump ----------
     if p.neck_lump:
         if p.neck_lump_days > 21:
             add("URGENT", "Persistent neck lump for more than 3 weeks (NICE NG12)",
-                "৩ সপ্তাহের বেশি সময় ধরে গলায় চাকা")
+                "৩ সপ্তাহের বেশি সময় ধরে ঘাড়ে চাকা")
         else:
-            add("HIGH", "Recent neck lump (re-check; urgent if it persists past 3 weeks)",
-                "গলায় নতুন চাকা (৩ সপ্তাহের বেশি থাকলে জরুরি)")
+            add("HIGH", "Recent neck lump (urgent if it persists past 3 weeks)",
+                "ঘাড়ে নতুন চাকা (৩ সপ্তাহের বেশি থাকলে জরুরি)")
 
-    # ---------- bleeding from a lesion ----------
-    if p.unexplained_bleeding:
-        add("URGENT", "Unexplained bleeding from an oral lesion (OCF)",
-            "কারণ ছাড়াই ঘা, দাগ বা চাকা থেকে রক্ত পড়া")
-
-    # ---------- numbness ----------
-    if p.numbness:
-        if p.numbness_days > 21:
-            add("URGENT", "Numbness of tongue, lip or mouth for more than 3 weeks (OCF)",
-                "৩ সপ্তাহের বেশি সময় ধরে অবশ ভাব")
-        elif p.numbness_days >= 14:
-            add("HIGH", "Numbness for 2-3 weeks", "২–৩ সপ্তাহ ধরে অবশ ভাব")
-        else:
-            add("MODERATE", "Recent numbness", "নতুন অবশ ভাব (২ সপ্তাহের কম)", recent=True)
-
-    # ---------- loose tooth (without trauma or long-standing gum disease) ----------
-    if p.loose_tooth:
-        add("HIGH", "Sudden tooth mobility without trauma or gum disease",
-            "আঘাত বা মাড়ির রোগ ছাড়া হঠাৎ দাঁত নড়া")
-
-    # ---------- difficulty swallowing ----------
-    if p.dysphagia:
-        if p.dysphagia_days > 21:
-            add("URGENT", "Difficulty swallowing or chewing for more than 3 weeks",
-                "৩ সপ্তাহের বেশি সময় ধরে গিলতে বা চিবাতে কষ্ট")
-        elif p.dysphagia_days >= 14:
-            add("HIGH", "Difficulty swallowing or chewing for 2-3 weeks",
-                "২–৩ সপ্তাহ ধরে গিলতে বা চিবাতে কষ্ট")
-        else:
-            add("MODERATE", "Recent difficulty swallowing or chewing",
-                "নতুন করে গিলতে বা চিবাতে কষ্ট (২ সপ্তাহের কম)", recent=True)
-
-    # ---------- pain ----------
-    if p.mouth_pain:
-        if p.mouth_pain_days >= 14:
-            add("HIGH", "Persistent pain in the affected area for 2 weeks or more",
-                "২ সপ্তাহ বা তার বেশি সময় ধরে আক্রান্ত জায়গায় ব্যথা")
-        else:
-            add("MODERATE", "Recent mouth pain", "মুখের ভেতরে নতুন ব্যথা (২ সপ্তাহের কম)", recent=True)
-
-    # ---------- oral submucous fibrosis signs ----------
     if p.reduced_mouth_opening:
-        add("HIGH", "Reduced mouth opening (possible oral submucous fibrosis)",
-            "মুখে তিন আঙুল ঢোকে না (মুখের চামড়া শক্ত হওয়ার রোগের লক্ষণ হতে পারে)")
-    if p.spicy_burning:
-        add("MODERATE", "New intolerance to spicy food, burning (early sign of oral submucous fibrosis)",
-            "অল্প ঝালেও মুখ জ্বালা (মুখের চামড়া শক্ত হওয়ার রোগের প্রথম লক্ষণ হতে পারে)")
-
-    # ---------- other ----------
-    if p.ear_pain:
-        add("MODERATE", "Ear pain without ear disease (possible referred pain)",
-            "কানের সমস্যা ছাড়া কান ব্যথা")
-    if p.weight_loss:
-        add("MODERATE", "Unintentional weight loss", "অনিচ্ছাকৃত ওজন কমা")
-
+        add("HIGH", "Reduced mouth opening, three fingers do not fit (possible oral submucous fibrosis)",
+            "মুখে তিন আঙুল ঢোকে না (মুখের ভেতরের আবরণ শক্ত হওয়ার রোগ, ওরাল সাবমিউকাস ফাইব্রোসিসের লক্ষণ হতে পারে)")
     return f

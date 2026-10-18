@@ -1,8 +1,15 @@
 """
 image_features.py
 -----------------
-Step 3 of the image module: turn one photo into a short list of numbers
-("handcrafted features") that describe its colour and texture.
+Step 3 of the image module: turn one photo into a list of numbers
+("colour, texture and topological features of the image") that describe it.
+The features are chosen in advance from mathematics and clinical knowledge
+(they are not learned automatically as in deep learning).
+
+Three groups:
+  1. Colour   (CIELAB colour space)
+  2. Texture  (GLCM and Shannon entropy)
+  3. Topology (persistent homology, see topology.py)
 
 Colour features use the CIELAB colour space:
     L* = lightness (0 = black, 100 = white)
@@ -22,11 +29,13 @@ from PIL import Image
 from skimage.color import rgb2lab
 from skimage.feature import graycomatrix, graycoprops
 
+from topology import topology_features, TOPO_FEATURE_NAMES, GRID
+
 MAX_SIDE = 512          # resize large photos for speed
 CENTRE_FRACTION = 0.7   # keep the central 70% of width and height
 GLCM_LEVELS = 32        # grey levels used for the GLCM
 
-FEATURE_NAMES = [
+COLOUR_TEXTURE_NAMES = [
     "mean_L", "std_L",              # lightness and its variation
     "mean_a", "std_a",              # redness and its variation
     "mean_b",                       # yellowness
@@ -36,6 +45,7 @@ FEATURE_NAMES = [
     "glcm_contrast", "glcm_homogeneity", "glcm_energy", "glcm_correlation",
     "entropy",                      # disorder of the brightness histogram
 ]
+FEATURE_NAMES = COLOUR_TEXTURE_NAMES + TOPO_FEATURE_NAMES     # 13 + 12 = 25
 
 
 def load_image(source) -> np.ndarray:
@@ -68,7 +78,11 @@ def extract_features(source) -> dict:
     hist = np.bincount(grey_q.ravel(), minlength=GLCM_LEVELS) / grey_q.size
     hist = hist[hist > 0]
 
-    return {
+    # ---------- topology (persistent homology on a small 64 x 64 copy) ----------
+    small = np.asarray(Image.fromarray(rgb).resize((GRID, GRID), Image.LANCZOS))
+    topo = topology_features(rgb2lab(small / 255.0))
+
+    return {**topo,
         "mean_L": float(L.mean()),
         "std_L": float(L.std()),
         "mean_a": float(a.mean()),

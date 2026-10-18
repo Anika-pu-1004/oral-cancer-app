@@ -40,6 +40,9 @@ class OddsRatio:
 
 # --------------------------------------------------------------------------
 # Evidence table (version 1)
+# Used by the short questionnaire (18 Oct 2026): slt_women, slt_men,
+# dual_use_men, bq_without_tobacco, smoking. The other three entries are kept
+# for reference (frequency and alcohol are no longer asked).
 # --------------------------------------------------------------------------
 EVIDENCE = {
     # Smokeless tobacco (SLT), Bangladesh

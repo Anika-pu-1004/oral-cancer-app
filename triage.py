@@ -1,14 +1,19 @@
 """
 triage.py
 ---------
-Combines (1) red-flag symptoms, (2) the habit score and (3) medical history
-into ONE urgency level. The final level is the HIGHEST level triggered by
-any rule, so a low habit score can never cancel a red flag.
+Combines (1) the clinical safety rules, (2) the habit score and (3) medical
+history into ONE level from the questions. The final level is the HIGHEST
+level triggered by any rule.  Levels (low -> high): LOW < MODERATE < HIGH < URGENT
 
-Levels (low -> high):  LOW < MODERATE < HIGH < URGENT
+combine_with_photo() then joins this with the PHOTO LEVEL from the image
+model (the main part of the project):
+    photo LOW       -> no change
+    photo MODERATE  -> at least MODERATE
+    photo HIGH      -> at least HIGH, and URGENT if a lesion was also seen
+The photo never lowers a level set by the clinical rules.
 
-The thresholds below are design choices of this prototype. They should be
-reviewed by a clinician before any real use.
+The thresholds are design choices of this prototype and must be reviewed
+by a clinician before any real use.
 """
 
 from dataclasses import dataclass, field
@@ -20,13 +25,12 @@ from risk_score import habit_score, HabitScore
 
 LEVELS = ["LOW", "MODERATE", "HIGH", "URGENT"]
 
-# --- tunable thresholds (combined odds ratio of habits) ---
 HABIT_OR_MODERATE = 4.0          # habits alone -> MODERATE
 HABIT_OR_MODERATE_AGE40 = 2.0    # habits + age >= 40 -> MODERATE
-HABIT_OR_ESCALATE = 4.0          # high-risk habits + early symptom -> HIGH
+HABIT_OR_ESCALATE = 4.0          # high-risk habits + new lesion -> HIGH
 
 ADVICE_BN = {
-    "URGENT": ("🚨", "জরুরি: ২ সপ্তাহের মধ্যে একজন বিশেষজ্ঞ (ওরাল সার্জন বা নাক-কান-গলা "
+    "URGENT": ("🚨", "২ সপ্তাহের মধ্যে একজন বিশেষজ্ঞ (ওরাল সার্জন বা নাক-কান-গলা "
                     "বিশেষজ্ঞ) দেখান।"),
     "HIGH": ("⚠️", "৪ সপ্তাহের মধ্যে একজন দন্ত চিকিৎসক বা ওরাল সার্জন দেখান।"),
     "MODERATE": ("🔍", "আগামী ৩ মাসের মধ্যে একজন দন্ত চিকিৎসক দিয়ে মুখ পরীক্ষা করান।"),
@@ -34,15 +38,10 @@ ADVICE_BN = {
                  "২ সপ্তাহ বা তার বেশি থাকলে অবশ্যই ডাক্তার দেখান।"),
 }
 
-# Shown only to people who use tobacco, betel quid or alcohol (at any level).
-QUIT_ADVICE_BN = "🚭 তামাক, জর্দা, পান-সুপারি, ধূমপান ও মদ ছাড়লে মুখের ক্যান্সারের ঝুঁকি কমে।"
-
-# Shown when a symptom is new (less than 2 weeks): most such signs heal by themselves,
-# so the person is asked to come back instead of being sent straight to a specialist.
-RECHECK_ADVICE_BN = ("🔁 উপসর্গটি নতুন (২ সপ্তাহের কম)। বেশিরভাগ এমন ঘা বা দাগ নিজে থেকেই সেরে "
-                     "যায়। ২ সপ্তাহ পর আবার মুখ দেখুন। তখনো থাকলে দেরি না করে দন্ত চিকিৎসক "
-                     "দেখান, অথবা আবার এই অ্যাপে দিন (তখন ফলাফল বেড়ে যাবে)।")
-
+QUIT_ADVICE_BN = "🚭 তামাক, জর্দা, পান-সুপারি ও ধূমপান ছাড়লে মুখের ক্যান্সারের ঝুঁকি কমে।"
+RECHECK_ADVICE_BN = ("🔁 ঘা বা দাগটি নতুন (২ সপ্তাহের কম)। বেশিরভাগ এমন ঘা বা দাগ নিজে থেকেই "
+                     "সেরে যায়। ২ সপ্তাহ পর আবার মুখ দেখুন। তখনো থাকলে দেরি না করে দন্ত "
+                     "চিকিৎসক দেখান, অথবা আবার এই অ্যাপে দিন (তখন ফলাফল বেড়ে যাবে)।")
 DISCLAIMER_BN = ("এই ফলাফল রোগ নির্ণয় নয়। এটি শুধু বলে দেয় কত দ্রুত ডাক্তার দেখানো উচিত। "
                  "নিশ্চিতভাবে জানার একমাত্র উপায় ডাক্তারের পরীক্ষা ও বায়োপসি।")
 
@@ -55,8 +54,8 @@ class TriageResult:
     reasons_en: list = field(default_factory=list)
     reasons_bn: list = field(default_factory=list)
     score: Optional[HabitScore] = None
-    recheck_in_2_weeks: bool = False      # a new (< 2 weeks) symptom that rises if it persists
-    has_habits: bool = False              # uses tobacco / betel quid / alcohol
+    recheck_in_2_weeks: bool = False      # a new (< 2 weeks) lesion
+    has_habits: bool = False              # uses tobacco / betel quid / smokes
 
 
 def _raise(current: str, new: str) -> str:
@@ -68,47 +67,46 @@ def triage(p: Patient, or_override: Optional[dict] = None) -> TriageResult:
     level = "LOW"
     reasons_en, reasons_bn = [], []
 
-    # 1. Symptom rules
     findings = check_red_flags(p)
     for f in findings:
         level = _raise(level, f.level)
         reasons_en.append(f"[{f.level}] {f.reason_en}")
         reasons_bn.append(f.reason_bn)
-    has_early_symptom = any(f.level == "MODERATE" for f in findings)
+    has_recent_lesion = any(f.recent for f in findings)
 
-    # 2. Habit score
     hs = habit_score(p, or_override)
     if hs.combined_or >= HABIT_OR_MODERATE:
         level = _raise(level, "MODERATE")
         reasons_en.append(f"[MODERATE] High-risk habits (combined OR = {hs.combined_or:.1f})")
-        reasons_bn.append("উচ্চ ঝুঁকির অভ্যাস (তামাক / পান / ধূমপান / মদ্যপান)")
+        reasons_bn.append("উচ্চ ঝুঁকির অভ্যাস (জর্দা / তামাক / পান / ধূমপান)")
     elif hs.combined_or >= HABIT_OR_MODERATE_AGE40 and p.age >= 40:
         level = _raise(level, "MODERATE")
         reasons_en.append(f"[MODERATE] Risk habits and age 40+ (combined OR = {hs.combined_or:.1f})")
-        reasons_bn.append("ঝুঁকিপূর্ণ অভ্যাস এবং বয়স ৪০-এর বেশি")
+        reasons_bn.append("ঝুঁকিপূর্ণ অভ্যাস এবং বয়স ৪০ বা বেশি")
 
-    # 3. Medical history
     if p.prev_oral_cancer:
         level = _raise(level, "HIGH")
         reasons_en.append("[HIGH] Previous head and neck cancer (risk of second cancer)")
         reasons_bn.append("আগে মুখ বা গলার ক্যান্সার হয়েছিল")
-    if p.known_opmd == "yes":
-        level = _raise(level, "MODERATE")
-        reasons_en.append("[MODERATE] Known oral potentially malignant disorder")
-        reasons_bn.append("মুখে ক্যান্সার-পূর্ব রোগ আগে থেকে জানা")
 
-    # 4. Escalation: an early symptom in a high-risk person
-    high_risk_person = (hs.combined_or >= HABIT_OR_ESCALATE or p.prev_oral_cancer
-                        or p.known_opmd == "yes")
-    if has_early_symptom and high_risk_person:
+    if has_recent_lesion and (hs.combined_or >= HABIT_OR_ESCALATE or p.prev_oral_cancer):
         level = _raise(level, "HIGH")
-        reasons_en.append("[HIGH] Early symptom in a high-risk person")
-        reasons_bn.append("উচ্চ ঝুঁকির মানুষের মধ্যে নতুন উপসর্গ")
+        reasons_en.append("[HIGH] New lesion in a high-risk person")
+        reasons_bn.append("উচ্চ ঝুঁকির মানুষের মুখে নতুন ঘা বা দাগ")
 
     emoji, advice = ADVICE_BN[level]
-    has_habits = bool(hs.terms) or p.alcohol_status in ("former", "current")
     return TriageResult(level, emoji, advice, reasons_en, reasons_bn, hs,
-                        recheck_in_2_weeks=any(f.recent for f in findings), has_habits=has_habits)
+                        recheck_in_2_weeks=has_recent_lesion, has_habits=bool(hs.terms))
+
+
+def combine_with_photo(question_level: str, photo_level: Optional[str], lesion_seen: bool) -> str:
+    """Final level from the question level and the photo level (None = no photo)."""
+    if photo_level is None or photo_level == "LOW":
+        return question_level
+    if photo_level == "MODERATE":
+        return _raise(question_level, "MODERATE")
+    # photo HIGH
+    return _raise(question_level, "URGENT" if lesion_seen else "HIGH")
 
 
 def print_result(name: str, r: TriageResult) -> None:
@@ -118,6 +116,4 @@ def print_result(name: str, r: TriageResult) -> None:
         print(f"   term: {t.key:20s} OR={t.odds_ratio:6.2f}  ({t.reason})")
     for reason in r.reasons_en:
         print(f"   reason: {reason}")
-    if r.score.context_factors:
-        print(f"   context: {', '.join(r.score.context_factors)}")
     print(f"   advice (BN): {r.advice_bn}")
